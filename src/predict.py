@@ -1,7 +1,11 @@
+from pathlib import Path
+
 import joblib
 import re
 import string
-import pandas as pd
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+MODEL_DIR = BASE_DIR / "models"
 
 
 def clean_text(text):
@@ -22,37 +26,33 @@ def clean_text(text):
 
     return text
 
-model = joblib.load("../models/fake_news_model.pkl")
 
-vectorizer = joblib.load("../models/tfidf_vectorizer.pkl")
+model = joblib.load(MODEL_DIR / "fake_news_model.pkl")
+
+vectorizer = joblib.load(MODEL_DIR / "tfidf_vectorizer.pkl")
 
 
-def predict_news(news):
+def predict_news(news, title=""):
 
-    cleaned_news = clean_text(news)
+    combined_news = f"{title} {news}".strip()
+    cleaned_news = clean_text(combined_news)
 
-    input_data = pd.DataFrame(
-        {"text": [cleaned_news]}
-    )
-
-    vectorized_input = vectorizer.transform(
-        input_data["text"]
-    )
+    vectorized_input = vectorizer.transform([cleaned_news])
 
     prediction = model.predict(vectorized_input)
 
-    if prediction[0] == 0:
+    if prediction[0] == 1:
         return "Fake News"
     else:
         return "Real News"
-
 
 if __name__ == "__main__":
 
     print("\nFake News Detection System\n")
 
+    user_title = input("Enter News Headline (optional):\n\n")
     user_input = input("Enter News Text:\n\n")
 
-    result = predict_news(user_input)
+    result = predict_news(user_input, user_title)
 
     print(f"\nPrediction: {result}")
