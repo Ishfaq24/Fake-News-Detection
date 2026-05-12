@@ -1,6 +1,11 @@
+from pathlib import Path
+
 import pandas as pd
 import re
 import string
+
+BASE_DIR = Path(__file__).resolve().parent.parent
+DATA_DIR = BASE_DIR / "data" / "raw"
 
 
 def clean_text(text):
@@ -24,20 +29,16 @@ def clean_text(text):
 
 def load_and_prepare_data():
 
-    fake = pd.read_csv("../data/raw/Fake.csv")
-    true = pd.read_csv("../data/raw/True.csv")
+    fake = pd.read_csv(DATA_DIR / "Fake.csv")
+    true = pd.read_csv(DATA_DIR / "True.csv")
 
-    fake["label"] = 0
-    true["label"] = 1
+    fake["label"] = 1
+    true["label"] = 0
 
-    data = pd.concat([fake, true])
+    data = pd.concat([fake, true], ignore_index=True)
 
-    data = data.sample(frac=1)
+    data = data.sample(frac=1, random_state=42).reset_index(drop=True)
 
-    data.reset_index(inplace=True)
-
-    data.drop(["index"], axis=1, inplace=True)
-
-    data["text"] = data["text"].apply(clean_text)
+    data["text"] = (data["title"].fillna("") + " " + data["text"].fillna("")).apply(clean_text)
 
     return data

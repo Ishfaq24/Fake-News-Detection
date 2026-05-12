@@ -1,11 +1,12 @@
+from pathlib import Path
+
 from flask import Flask, render_template, request
 import joblib
-import pandas as pd
 import re
 import string
-import os
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BASE_DIR = Path(__file__).resolve().parent
+MODEL_DIR = BASE_DIR.parent / "models"
 
 
 app = Flask(__name__)
@@ -30,11 +31,22 @@ def clean_text(text):
     return text
 
 
-model_path = os.path.join(BASE_DIR, "../models/fake_news_model.pkl")
-vectorizer_path = os.path.join(BASE_DIR, "../models/tfidf_vectorizer.pkl")
+def predict_news(title, news):
 
-model = joblib.load(model_path)
-vectorizer = joblib.load(vectorizer_path)
+    combined_news = f"{title} {news}".strip()
+    cleaned_news = clean_text(combined_news)
+
+    vectorized_input = vectorizer.transform([cleaned_news])
+    result = model.predict(vectorized_input)
+
+    if result[0] == 1:
+        return "Fake News"
+    return "Real News"
+
+
+model = joblib.load(MODEL_DIR / "fake_news_model.pkl")
+vectorizer = joblib.load(MODEL_DIR / "tfidf_vectorizer.pkl")
+
 
 @app.route("/", methods=["GET", "POST"])
 def home():
@@ -43,24 +55,10 @@ def home():
 
     if request.method == "POST":
 
-        news = request.form["news"]
+        title = request.form.get("title", "")
+        news = request.form.get("news", "")
 
-        cleaned_news = clean_text(news)
-
-        input_data = pd.DataFrame(
-            {"text": [cleaned_news]}
-        )
-
-        vectorized_input = vectorizer.transform(
-            input_data["text"]
-        )
-
-        result = model.predict(vectorized_input)
-
-        if result[0] == 0:
-            prediction = "Fake News"
-        else:
-            prediction = "Real News"
+        prediction = predict_news(title, news)
 
     return render_template(
         "index.html",
