@@ -1,67 +1,110 @@
-from pathlib import Path
-
 import joblib
+import numpy as np
 
 from sklearn.model_selection import train_test_split
+from sklearn.pipeline import Pipeline, FeatureUnion
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, balanced_accuracy_score, classification_report
 
 from data_preprocessing import load_and_prepare_data
+from config import *
 
-BASE_DIR = Path(__file__).resolve().parent.parent
-MODEL_DIR = BASE_DIR / "models"
-MODEL_DIR.mkdir(exist_ok=True)
+print("Loading and preprocessing dataset...")
 
-print("Loading dataset...")
 
-data = load_and_prepare_data()
+df = load_and_prepare_data(
+    FAKE_DATA_PATH,
+    TRUE_DATA_PATH
+)
 
-x = data["text"]
-y = data["label"]
+X = df['content']
+y = df['label']
 
 print("Splitting dataset...")
 
-x_train, x_test, y_train, y_test = train_test_split(
-    x,
+X_train, X_test, y_train, y_test = train_test_split(
+    X,
     y,
-    test_size=0.25,
-    random_state=42,
+    test_size=TEST_SIZE,
+    random_state=RANDOM_STATE,
     stratify=y
 )
 
-print("Vectorizing text...")
+print("Vectorizing text using TF-IDF...")
 
-vectorizer = TfidfVectorizer(
-    ngram_range=(1, 2),
-    stop_words="english",
-    max_df=0.95,
-    min_df=2
-)
+pipeline = Pipeline([
+    (
+        "features",
+        FeatureUnion([
+            (
+                "word_tfidf",
+                TfidfVectorizer(
+                    max_features=40000,
+                    ngram_range=(1, 2),
+                    min_df=2,
+                    max_df=0.95,
+                    sublinear_tf=True,
+                ),
+            ),
+            (
+                "char_tfidf",
+                TfidfVectorizer(
+                    analyzer='char_wb',
+                    ngram_range=(3, 5),
+                    max_features=30000,
+                    min_df=2,
+                    sublinear_tf=True,
+                ),
+            ),
+        ]),
+    ),
+    (
+        "classifier",
+        LogisticRegression(
+            max_iter=2000,
+            class_weight='balanced',
+            solver='liblinear',
+            random_state=RANDOM_STATE,
+        ),
+    ),
+])
 
-xv_train = vectorizer.fit_transform(x_train)
-xv_test = vectorizer.transform(x_test)
+print("Training Logistic Regression model...")
 
-print("Training model...")
+pipeline.fit(X_train, y_train)
 
-model = LogisticRegression(
-    max_iter=1000,
-    class_weight="balanced"
-)
+print("Evaluating model...")
 
-model.fit(xv_train, y_train)
+validation_probabilities = pipeline.predict_proba(X_test)[:, 1]
 
-print("Predicting...")
+thresholds = np.linspace(0.2, 0.8, 121)
+best_threshold = 0.5
+best_score = -1.0
 
-predictions = model.predict(xv_test)
+for threshold in thresholds:
+    threshold_predictions = (validation_probabilities >= threshold).astype(int)
+    score = balanced_accuracy_score(y_test, threshold_predictions)
+
+    if score > best_score:
+        best_score = score
+        best_threshold = float(threshold)
+
+predictions = (validation_probabilities >= best_threshold).astype(int)
 
 accuracy = accuracy_score(y_test, predictions)
 
-print(f"\nAccuracy: {accuracy * 100:.2f}%")
+print(f"Accuracy: {accuracy * 100:.2f}%")
+print(f"Balanced Accuracy: {best_score * 100:.2f}%")
+print(f"Selected decision threshold: {best_threshold:.2f}")
+print("\nClassification Report:\n")
+print(classification_report(y_test, predictions))
 
-print("\nSaving model...")
+print("Saving model...")
 
-joblib.dump(model, MODEL_DIR / "fake_news_model.pkl")
-joblib.dump(vectorizer, MODEL_DIR / "tfidf_vectorizer.pkl")
+joblib.dump({
+    "pipeline": pipeline,
+    "threshold": best_threshold,
+}, MODEL_PATH)
 
-print("\nModel saved successfully!")
+print("Model and vectorizer saved successfully!")
