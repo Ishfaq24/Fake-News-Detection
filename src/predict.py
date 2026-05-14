@@ -1,58 +1,62 @@
-from pathlib import Path
-
-import joblib
-import re
-import string
-
-BASE_DIR = Path(__file__).resolve().parent.parent
-MODEL_DIR = BASE_DIR / "models"
+from config import MODEL_PATH, VECTORIZER_PATH
+from data_preprocessing import clean_text
+from utils import combine_text_fields, load_model_bundle, predict_from_bundle
 
 
-def clean_text(text):
+LABELS = {
+    0: "Real News",
+    1: "Fake News",
+}
 
-    text = str(text).lower()
-
-    text = re.sub(r'\[.*?\]', '', text)
-
-    text = re.sub(r"https?://\S+|www\.\S+", '', text)
-
-    text = re.sub(r'<.*?>+', '', text)
-
-    text = re.sub(r'[%s]' % re.escape(string.punctuation), '', text)
-
-    text = re.sub(r'\n', '', text)
-
-    text = re.sub(r'\w*\d\w*', '', text)
-
-    return text
+INFERENCE_THRESHOLD = 0.65
 
 
-model = joblib.load(MODEL_DIR / "fake_news_model.pkl")
-
-vectorizer = joblib.load(MODEL_DIR / "tfidf_vectorizer.pkl")
+bundle = load_model_bundle(MODEL_PATH, VECTORIZER_PATH)
 
 
 def predict_news(news, title=""):
-
-    combined_news = f"{title} {news}".strip()
+    combined_news = combine_text_fields({"title": title, "text": news})
     cleaned_news = clean_text(combined_news)
+    _, score = predict_from_bundle(bundle, cleaned_text=cleaned_news)
+    prediction = int(float(score) >= INFERENCE_THRESHOLD)
+    return LABELS[prediction]
 
-    vectorized_input = vectorizer.transform([cleaned_news])
 
-    prediction = model.predict(vectorized_input)
+def predict_news_with_details(news, title=""):
+    combined_news = combine_text_fields({"title": title, "text": news})
+    cleaned_news = clean_text(combined_news)
+    _, score = predict_from_bundle(bundle, cleaned_news)
 
-    if prediction[0] == 1:
-        return "Fake News"
-    else:
-        return "Real News"
+    threshold = INFERENCE_THRESHOLD
+    score_value = float(score)
+    prediction = int(score_value >= threshold)
+    label = LABELS[prediction]
+
+    return {
+        "label": label,
+        "prediction": prediction,
+        "score": score_value,
+        "threshold": threshold,
+        "uncertain": False,
+    }
+
 
 if __name__ == "__main__":
+    print("\nFake News Detection System")
 
-    print("\nFake News Detection System\n")
+    while True:
+        print("\nEnter News Text:")
 
-    user_title = input("Enter News Headline (optional):\n\n")
-    user_input = input("Enter News Text:\n\n")
+        news = input()
 
-    result = predict_news(user_input, user_title)
+        if news.lower() == "exit":
+            break
 
-    print(f"\nPrediction: {result}")
+        details = predict_news_with_details(news)
+        prediction = details["label"]
+        score = details["score"]
+        threshold = details["threshold"]
+
+        print(f"\n{prediction.upper()}")
+        print(f"Fake Probability: {score:.4f}")
+        print(f"Threshold: {threshold:.4f}")
